@@ -33,20 +33,13 @@ const (
 
 	// ConditionStatusInit indicates the condition for object status
 	// has just initiated. This is just to allow manual status patching
-	// using kubctl, where no attestation-controller is running.
-	// NOTE: This mist be removed in near feature.
+	// using kubectl, where no attestation-controller is running.
+	// NOTE: This must be removed in near feature.
 	ConditionStatusInit ConditionType = "Init"
 
-	// ConditionQuoteVerified indicates the condition for quote verification
-	// Must be set by the attestation-controller to update the quote verification
-	// state.
-	ConditionQuoteVerified ConditionType = "QuoteVerified"
-	// ConditionCASecretReady indicates the condition for requested secret(s) are
-	// ready. This must be set by the attestation-controller when it fetches
-	// the CA encrypted key and certificate and prepared teh secret.
-	ConditionCASecretReady ConditionType = "CASecretReady"
-	// ConditionReady indicates the condition for the requested signer/CA(s)
-	// provision in to HSM token. This must be set by the attestation requester.
+	// ConditionReady indicates the condition for the request is ready
+	// This should be set by the attestation-controller upon request has
+	// been resolved, i.e. either success or failure.
 	ConditionReady ConditionType = "Ready"
 
 	ReasonTCSReconcile        ConditionReason = "TCSReconcile"
@@ -57,8 +50,26 @@ const (
 	ECDSAQuoteVersion3 = "ECDSA Quote 3"
 )
 
+// QuoteAttestationRequestType type definition for representing
+// the type of attestation request
+type QuoteAttestationRequestType string
+
+const (
+	// RequestTypeQuoteAttestation represents the type of request
+	// is for only quote verification
+	RequestTypeQuoteAttestation = "QuoteAttestation"
+	// RequestTypeKeyProvisioning represents the type of request
+	// is for CA key provisioning where quote verification is a
+	// pre-requisite
+	RequestTypeKeyProvisioning = "KeyProvisioning"
+)
+
 // QuoteAttestationSpec defines the desired state of QuoteAttestation
 type QuoteAttestationSpec struct {
+	// Type represents the type of the request, one of "QuoteAttestation", "KeyProvisioning".
+	// +kubebuilder:validation:Enum=QuoteAttestation;KeyProvisioning
+	// +kubebuilder:validation:default=KeyProvisioning
+	Type QuoteAttestationRequestType `json:"type"`
 	// Quote to be verified, base64-encoded.
 	// +kubebuilder:listType=atomic
 	Quote []byte `json:"quote"`
@@ -77,9 +88,18 @@ type QuoteAttestationSpec struct {
 	// +kubebuilder:listType=atomic
 	PublicKey []byte `json:"publicKey"`
 
-	// SignerNames refers to the list of Kubernetes CSR signer names used by
+	// SignerName refers to the Kubernetes CSR signer name used by
 	// this request.
-	SignerNames []string `json:"signerNames"`
+	SignerName string `json:"signerName"`
+
+	// SecretName is name of the Secret object (in the same namespace)
+	// to keep the wrapped on secrets (only needed for KeyProvisioning request type)
+	// which is an opeque type. The secret data must contain two map elements `tls.key`
+	// and `tls.cert` and the values are the base64 encoded encrypted CA key and
+	// base64 encoded x509(PEM encoded) certificate. This must be added only after
+	// a successful quote validation and before updating the status condition.
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
 }
 
 // QuoteAttestationCondition describes a condition of a QuoteAttestation object
@@ -99,34 +119,12 @@ type QuoteAttestationCondition struct {
 	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 }
 
-// QuoteAttestationSecret defines the secret get from the Key Management Service
-type QuoteAttestationSecret struct {
-	// SecretName represents name of the Secret object (in the same namespace)
-	// which is opeque type. The secret data must contain two map elements `tls.key`
-	// and `tls.cert` and the values are the base64 encoded encrypted CA key and
-	// base64 encoded x509(PEM encoded) certificate. This must bed added only after a successful
-	// quote validation and before updating the status condition.
-	// +optional
-	SecretName string `json:"secretName,omitempty"`
-
-	// SecretType defines the internal structure of secret fetched from the
-	// Key Management Service, as there might be different formats accordingly.
-	// +optional
-	SecretType string `json:"secretType,omitempty"`
-}
-
 // QuoteAttestationStatus defines the observed state of QuoteAttestation
 type QuoteAttestationStatus struct {
 	// conditions applied to the request. Known conditions are "QuoteVerified",
 	// "CASecretsReady" and "Ready".
 	// +optional
 	Conditions []QuoteAttestationCondition `json:"conditions,omitempty"`
-
-	// Secrets fetched after the request has been processed successfully
-	// The map keys are the signer names(Spec.SignerNames) passed by the
-	// request.
-	// +optional
-	Secrets map[string]QuoteAttestationSecret `json:"secrets,omitempty"`
 }
 
 //+kubebuilder:object:root=true

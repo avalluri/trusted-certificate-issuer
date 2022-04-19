@@ -17,6 +17,7 @@ limitations under the License.
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"fmt"
@@ -45,18 +46,20 @@ const (
 // CSRReconciler reconciles a CSR object
 type CSRReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Log         logr.Logger
-	KeyProvider keyprovider.KeyProvider
-	mutex       sync.Mutex
+	Scheme        *runtime.Scheme
+	Log           logr.Logger
+	KeyProvider   keyprovider.KeyProvider
+	mutex         sync.Mutex
+	fullCertChain bool
 }
 
-func NewCSRReconciler(c client.Client, scheme *runtime.Scheme, keyProvider keyprovider.KeyProvider) *CSRReconciler {
+func NewCSRReconciler(c client.Client, scheme *runtime.Scheme, keyProvider keyprovider.KeyProvider, fullCertChain bool) *CSRReconciler {
 	return &CSRReconciler{
-		Log:         ctrl.Log.WithName("controllers").WithName("CSR"),
-		Client:      c,
-		Scheme:      scheme,
-		KeyProvider: keyProvider,
+		Log:           ctrl.Log.WithName("controllers").WithName("CSR"),
+		Client:        c,
+		Scheme:        scheme,
+		KeyProvider:   keyProvider,
+		fullCertChain: fullCertChain,
 	}
 }
 
@@ -64,7 +67,6 @@ func NewCSRReconciler(c client.Client, scheme *runtime.Scheme, keyProvider keypr
 //+kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=certificates.k8s.io,resources=certificatesigningrequests/finalizers,verbs=update
 //+kubebuilder:rbac:groups=certificates.k8s.io,resources=signers,resourceNames=tcsissuer.tcs.intel.com/*;tcsclusterissuer.tcs.intel.com/*,verbs=sign
-//+kubebuilder:rbac:groups=*,resources=secrets,verbs=get;create;update;delete;list;watch
 
 func (r *CSRReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if r == nil {
@@ -165,7 +167,20 @@ func (r *CSRReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	patch := client.MergeFrom(csr.DeepCopy())
-	csr.Status.Certificate = tlsutil.EncodeCert(cert)
+	if r.fullCertChain {
+		l.Info("Preparing full certificate chain")
+		// NOTE(avalluri): This is a temporary solution to make it work with Istio v1.12,
+		// Where it expects the full certChain along with the root certificate.
+		// But according to https://datatracker.ietf.org/doc/html/rfc5246#section-7.4.2
+		// self-signed root certificate should not include the certificat chain.
+		certChain, err := encodeX509Chain([]*x509.Certificate{cert, s.Certificate()})
+		if err != nil {
+			return retry, fmt.Errorf("error preparing cert chain: %v", err)
+		}
+		csr.Status.Certificate = certChain
+	} else {
+		csr.Status.Certificate = tlsutil.EncodeCert(cert)
+	}
 	if err := r.Client.Status().Patch(ctx, &csr, patch); err != nil {
 		return retry, fmt.Errorf("error patching CSR: %v", err)
 	}
@@ -264,4 +279,14 @@ func k8sKeyUsagesToX509KeyUsages(usages []crtv1.KeyUsage) (x509.KeyUsage, []x509
 	}
 
 	return keyUsage, extUsage, nil
+}
+
+func encodeX509Chain(certs []*x509.Certificate) ([]byte, error) {
+	caPem := bytes.NewBuffer([]byte{})
+	//caPem := []byte{}
+	for _, cert := range certs {
+		caPem.Write(tlsutil.EncodeCert(cert)[:])
+	}
+
+	return caPem.Bytes(), nil
 }

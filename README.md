@@ -6,17 +6,20 @@
 - [Overview](#overview)
 - [Getting started](#getting-started)
     - [Prerequisites](#prerequisites)
-    - [Installation](#installation)
+    - [Installing with Helm](#installing-with-helm)
+    - [Installing with source code](#installing-with-source-code)
     - [Create an Issuer](#create-an-issuer)
     - [Create certificates](#create-certificates)
+- [Deployment in Azure](#deployment-in-azure)
 - [Sample use cases](#sample-use-cases)
+- [Limitations](#limitations)
 
 <!-- /TOC -->
 
 ## Overview
 
 <!-- TODO: Review and rephrase this section -->
-Trusted Certificate Service (TCS) is a Kubernetes certificate signing solution that uses the security capabilities provided by the Intel® SGX. The signing key is stored and used inside the SGX enclave(s) and is never stored in clear anywhere in the system. TCS is implemented as a [cert-manager external issuer](https://cert-manager.io/docs/configuration/external/) by providing support for both cert-manager and kubernetes certificate siging APIs.
+Trusted Certificate Service (TCS) is a Kubernetes certificate signing solution that uses the security capabilities provided by the Intel® SGX. The signing key is stored and used inside the SGX enclave(s) and is never stored in clear anywhere in the system. TCS is implemented as a [cert-manager external issuer](https://cert-manager.io/docs/configuration/external/) by providing support for both cert-manager and kubernetes certificate signing APIs.
 
 ## Getting started
 
@@ -29,13 +32,17 @@ Prerequisites for building and running Trusted Certificate Service:
 - Kubernetes cluster with one or more nodes with Intel® [SGX](https://software.intel.com/content/www/us/en/develop/topics/software-guard-extensions.html) supported hardware
 - [Intel® SGX device plugin](https://github.com/intel/intel-device-plugins-for-kubernetes/blob/main/cmd/sgx_plugin/README.md) for Kubernetes
 - [Intel® SGX AESM daemon](https://github.com/intel/linux-sgx#install-the-intelr-sgx-psw)
-- [cert-manager](https://cert-manager.io/next-docs/installation/). The `cmtool` is also used later in the examples so you may want to install it also.
+- [cert-manager](https://cert-manager.io/next-docs/installation/). The `cmctl` is also used later in the examples so you may want to install it also.
 - Linux kernel version 5.11 or later on the host (in tree SGX driver)
 - git, or similar tool, to obtain the source code
 - Docker, or similar tool, to build container images
 - Container registry ([local](https://docs.docker.com/registry/deploying/) or remote)
 
-### Installation
+### Installing with Helm 
+
+If you want to use Helm to install TCS see the document [here](./docs/helm.md).
+
+### Installing with source code
 
 This section covers how to obtain the source code, build and install it.
 
@@ -258,6 +265,10 @@ Subject:
          Organization:   Foo Company
 ```
 
+
+## Deployment in Azure
+
+You can deploy TCS also in Azure by following the instructions [here](./docs/azure.md).
 ## Sample use cases
 
 Refer to more example use cases related to Istio service mesh and Trusted Certificate Service
@@ -265,7 +276,7 @@ Refer to more example use cases related to Istio service mesh and Trusted Certif
 - [Istio custom CA integration using Kubernetes CSR](./docs/istio-custom-ca-with-csr.md)
 - [Istio integration with cert-manager and istio-csr](./docs/istio-csr-external-ca-setup.md)
 - [Remote attestation and key management (manual)](./docs/integrate-key-server.md)
-# Limitations
+## Limitations
 
 - This version of the software is pre-production release and is meant for evaluation and trial purposes only.
 - The certificate authority (CA) private key transport method (via QuoteAttestation custom resource) does not guarantee any authenticity, only confidentiality, and therefore cannot protect from attacks like key substitution or key replay.

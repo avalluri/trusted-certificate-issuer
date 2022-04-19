@@ -1,21 +1,14 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  labels:
-    control-plane: tcs-issuer
-  name: tcs-issuer
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: tcs-issuer-serviceaccount
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: tcs-leader-election-role
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 rules:
 - apiGroups:
   - ""
@@ -84,7 +77,7 @@ metadata:
   name: tcs-role
 rules:
 - apiGroups:
-  - ""
+  - '*'
   resources:
   - secrets
   verbs:
@@ -92,17 +85,8 @@ rules:
   - delete
   - get
   - list
-  - patch
   - update
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets/finalizers
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - cert-manager.io
   resources:
@@ -213,7 +197,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: tcs-leader-election-rolebinding
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -221,7 +205,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: tcs-issuer-serviceaccount
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -234,7 +218,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: tcs-issuer-serviceaccount
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -247,7 +231,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: tcs-issuer-serviceaccount
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 ---
 apiVersion: v1
 data:
@@ -266,7 +250,7 @@ data:
 kind: ConfigMap
 metadata:
   name: tcs-config
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 ---
 apiVersion: v1
 data:
@@ -275,7 +259,7 @@ data:
 kind: Secret
 metadata:
   name: tcs-issuer-pkcs11-conf
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 type: Opaque
 ---
 apiVersion: v1
@@ -284,7 +268,7 @@ metadata:
   labels:
     control-plane: tcs-issuer
   name: tcs-metrics-service
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   ports:
   - name: https
@@ -299,7 +283,7 @@ metadata:
   labels:
     control-plane: tcs-issuer
   name: tcs-controller
-  namespace: tcs-issuer
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: 1
   selector:
@@ -321,6 +305,11 @@ spec:
         - --health-probe-bind-address=:8083
         - --user-pin=$USER_PIN
         - --so-pin=$SO_PIN
+        {{- if .Values.controllerExtraArgs }}
+        {{- with .Values.controllerExtraArgs }}
+        {{- tpl . $ | trim | nindent 8 }}
+        {{- end }}
+        {{- end }}
         command:
         - /tcs-issuer
         env:
@@ -334,8 +323,8 @@ spec:
             secretKeyRef:
               key: sopin
               name: tcs-issuer-pkcs11-conf
-        image: intel/trusted-certificate-issuer:latest
-        imagePullPolicy: Always
+        image: "{{ .Values.image.hub }}/{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
         livenessProbe:
           httpGet:
             path: /healthz
