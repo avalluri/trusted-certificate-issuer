@@ -276,10 +276,6 @@ func (ctx *SgxContext) ProvisionSigner(signerName string, encryptedKey []byte, c
 		return nil, fmt.Errorf("invalid wrapped key length")
 	}
 
-	if err := ctx.provisionCertificate(signerName, cert); err != nil {
-		return nil, fmt.Errorf("failed to provision certificate for signer '%s': %v", signerName, err)
-	}
-
 	// Wrapped SWK - AES256 (with input public key) + Wrapped input private key (with SWK),
 	// bytes concatenated and then encoded with base64 - After decoding with base64,
 	// the first 384 bytes (3072 bits - it depends on the length of the input public key)
@@ -289,26 +285,29 @@ func (ctx *SgxContext) ProvisionSigner(signerName string, encryptedKey []byte, c
 
 	_, err := ctx.provisionKey(signerName, wrappedSwk, wrappedPrKey)
 	if err != nil {
-		ctx.cryptoCtx.DeleteCertificate(nil, []byte(signerName), nil)
 		return nil, fmt.Errorf("failed to provision key for signer '%s': %v", signerName, err)
 	}
 
 	cryptoSigner, err := ctx.cryptoCtx.FindKeyPair(nil, []byte(signerName))
 	if err != nil {
-		ctx.ctxLock.Lock()
-		defer ctx.ctxLock.Unlock()
-		ctx.cryptoCtx.DeleteCertificate(nil, []byte(signerName), nil)
 		return nil, fmt.Errorf("failed to load the stored key: %v", err)
 	}
-	s.SetReady(cryptoSigner, cert)
 
-	if err := selfca.ValidateCACertificate(cert, cryptoSigner.Public()); err != nil {
-		if removeError := ctx.removeSignerInToken(s); removeError != nil {
-			ctx.log.V(2).Error(removeError, "failed to remove signer due to invalid CA certificate", "signer", signerName)
-		}
-		s.SetError(err)
-		return nil, fmt.Errorf("CA certificate validation failure: %v", err)
+	if cert != nil {
+		err = selfca.ValidateCACertificate(cert, cryptoSigner.Public())
+	} else {
+		cert, err = newCACertificate(cryptoSigner)
 	}
+	if err != nil {
+		cryptoSigner.Delete()
+		return nil, err
+	}
+	if err := ctx.provisionCertificate(signerName, cert); err != nil {
+		cryptoSigner.Delete()
+		return nil, fmt.Errorf("failed to provision certificate for signer '%s': %v", signerName, err)
+	}
+
+	s.SetReady(cryptoSigner, cert)
 
 	ctx.signers.Add(s)
 	ctx.log.Info("Signer is ready", "signerName", s.Name())
