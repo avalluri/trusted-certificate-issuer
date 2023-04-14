@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -300,19 +301,18 @@ func (r *IssuerReconciler) provisionSigner(ctx context.Context, signerName, secr
 		return nil, fmt.Errorf("corrupted key data: %v", err)
 	}
 
-	encCert, ok := secret.Data[v1.TLSCertKey]
-	if !ok || len(encCert) == 0 {
-		return nil, fmt.Errorf("invalid secret: missing CA certificate")
-	}
+	var cert *x509.Certificate
+	encCert, _ := secret.Data[v1.TLSCertKey]
+	if len(encCert) != 0 {
+		pemCert, err := base64.StdEncoding.DecodeString(string(encCert))
+		if err != nil {
+			return nil, fmt.Errorf("corrupted certificate: %v", err)
+		}
 
-	pemCert, err := base64.StdEncoding.DecodeString(string(encCert))
-	if err != nil {
-		return nil, fmt.Errorf("corrupted certificate: %v", err)
-	}
-
-	cert, err := tlsutil.DecodeCert(pemCert)
-	if err != nil {
-		return nil, fmt.Errorf("corrupted certificate: %v", err)
+		cert, err = tlsutil.DecodeCert(pemCert)
+		if err != nil {
+			return nil, fmt.Errorf("corrupted certificate: %v", err)
+		}
 	}
 
 	return r.KeyProvider.ProvisionSigner(signerName, encryptedKey, cert)
